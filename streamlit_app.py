@@ -152,11 +152,11 @@ def main():
 
                     # 显示统计指标
                     st.subheader('统计分析')
-                    col1, col2, col3 = st.columns(3)
+                    col1, col2, col3 = st.columns([5, 2, 12])
 
                     with col1:
                         completion_rate = (df[actual_col].sum() / df[plan_col].sum() * 100) if df[
-                                                                                                   plan_col].sum() != 0 else 0
+                                                                                                plan_col].sum() != 0 else 0
                         avg_completion_rate = (df[actual_col].mean() / df[plan_col].mean() * 100) if df[
                                                                                                          plan_col].mean() != 0 else 0
                         st.metric('总体完成率', f"{completion_rate:.2f}%")
@@ -167,8 +167,12 @@ def main():
                         st.metric('未达计划掌子面数量', int(len(df[df['差异值'] < 0])))
 
                     with col3:
-                        st.metric('最大超计划值', f"{df['差异值'].max():.2f}")
-                        st.metric('最大滞后值', f"{df['差异值'].min():.2f}")
+                        max_diff = df['差异值'].max()
+                        min_diff = df['差异值'].min()
+                        max_diff_name = df.loc[df['差异值'] == max_diff, name_col].values[0]
+                        min_diff_name = df.loc[df['差异值'] == min_diff, name_col].values[0]
+                        st.metric('最大超计划值', f"{max_diff:.2f}({max_diff_name})")
+                        st.metric('最大滞后值', f"{min_diff:.2f}({min_diff_name})")
 
                     # 显示趋势图
                     st.subheader('趋势分析')
@@ -190,11 +194,11 @@ def main():
                         actual_col: '{:.2f}',
                         '差异值': '{:.2f}',
                         '差异率': '{:.2f}%'
-                    }).apply(lambda x: ['background-color: rgba(255,0,0,0.2)' if v < 0
+                    }).apply(lambda row: ['background-color: rgba(255,0,0,0.2)' if v < 0
                                         else 'background-color: rgba(0,255,0,0.2)'
-                                        for v in x['差异值']], axis=1)
+                                        for v in row['差异值']], axis=1)
 
-                    st.dataframe(styled_df)
+                    st.write(styled_df)
 
                     # 添加数据下载按钮
                     csv = detailed_df.to_csv(index=False).encode('utf-8')
