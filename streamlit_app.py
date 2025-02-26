@@ -137,6 +137,7 @@ def main():
 
             # 选择列
             st.write("请选择要分析的数据列：")
+            section_col = st.selectbox('选择部位名称', text_cols)
             name_col = st.selectbox('选择掌子面名称列', text_cols)
             plan_col = st.selectbox('选择计划值列', numeric_cols)
             actual_col = st.selectbox('选择实际值列', numeric_cols)
@@ -167,8 +168,8 @@ def main():
                         st.metric('未达计划掌子面数量', int(len(df[df['差异值'] < 0])))
 
                     with col3:
-                        max_diff = df['差异值'].max()
-                        min_diff = df['差异值'].min()
+                        max_diff = float(df['差异值'].max())
+                        min_diff = float(df['差异值'].min())
                         max_diff_name = df.loc[df['差异值'] == max_diff, name_col].values[0]
                         min_diff_name = df.loc[df['差异值'] == min_diff, name_col].values[0]
                         st.metric('最大超计划值', f"{max_diff:.2f}({max_diff_name})")
@@ -184,20 +185,22 @@ def main():
                     variance_fig = create_variance_chart(df, name_col, '差异值')
                     st.plotly_chart(variance_fig, use_container_width=True)
 
-                    # 显示详细数据
-                    st.subheader('差异详细数据')
-                    detailed_df = df[[name_col, plan_col, actual_col, '差异值', '差异率']]
 
-                    # 设置样式和格式
-                    styled_df = detailed_df.style.format({
+
+                    st.subheader('差异详细数据')
+                    detailed_df = df[[section_col, name_col, plan_col, actual_col, '差异值', '差异率']]
+                    if df.columns.duplicated().any():
+                        df = df.loc[:, ~df.columns.duplicated()]
+                        # 设置样式和格式
+                    styled_df = df.style.format({
                         plan_col: '{:.2f}',
                         actual_col: '{:.2f}',
                         '差异值': '{:.2f}',
                         '差异率': '{:.2f}%'
-                    }).apply(lambda row: ['background-color: rgba(255,0,0,0.2)' if v < 0
+                    }).apply(lambda col: ['background-color: rgba(255,0,0,0.2)' if col['差异值'] < 0
                                         else 'background-color: rgba(0,255,0,0.2)'
-                                        for v in row['差异值']], axis=1)
-
+                                        for _ in col], axis=1  # 确保每行都返回相同的背景色
+                             )
                     st.write(styled_df)
 
                     # 添加数据下载按钮
