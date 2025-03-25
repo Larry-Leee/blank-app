@@ -46,7 +46,7 @@ def create_trend_chart(df, name_col, plan_col, actual_col):
     # 添加计划线
     fig.add_trace(
         go.Scatter(x=df[name_col], y=df[plan_col],
-                   name='计划值',
+                   name='下周计划值',
                    line=dict(color='rgb(31, 119, 180)'),
                    mode='lines+markers')
     )

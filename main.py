@@ -1,139 +1,95 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-import spacy
-import re
-from collections import defaultdict
+from streamlit_echarts import st_echarts
+import openai
+import json
 
+# 设置OpenAI API密钥（可选）
+openai.api_key = "your-openai-api-key"
 
+def load_excel(file):
+    try:
+        df = pd.read_excel(file)
+        return df
+    except Exception as e:
+        st.error(f"文件读取失败: {e}")
+        return None
 
-# 加载spaCy中文模型
-nlp = spacy.load("zh_core_web_sm")
-
-
-# 定义一个简单的模糊匹配方法，用于从用户的请求中推断图表类型
-def guess_chart_type(request):
-    chart_keywords = {
-        "柱状图": "bar",
-        "折线图": "line",
-        "散点图": "scatter",
-        "热力图": "heatmap",
-        "饼图": "pie",
-        "对比": "bar"  # 默认对比为柱状图
+def generate_chart(df, x_col, y_col1, y_col2, chart_type="bar"):
+    # 将NaN替换为null
+    df = df.where(pd.notnull(df), None)
+    
+    # 将数据转换为JSON格式
+    option = {
+        "tooltip": {},
+        "xAxis": {"type": "category", "data": df[x_col].astype(str).tolist()},
+        "yAxis": {"type": "value"},
+        "series": [
+            {"name": y_col1, "data": df[y_col1].tolist(), "type": chart_type},
+            {"name": y_col2, "data": df[y_col2].tolist(), "type": chart_type}
+        ],
+        "legend": {"data": [y_col1, y_col2]}
     }
 
-    # 搜索请求文本中是否有对应的图表类型关键词
-    for keyword, chart_type in chart_keywords.items():
-        if keyword in request:
-            return chart_type
+    # 使用json.dumps将生成的配置转换为有效的JSON字符串
+    option_json = json.dumps(option, default=str)
+    st_echarts(option_json, height="400px")
 
-    # 如果没有明确的图表类型，返回默认类型
-    return "bar"
+def query_data(df, query):
+    try:
+        result = eval(query)
+        return result
+    except Exception as e:
+        st.error(f"查询失败: {e}")
+        return None
 
+def chat_query_to_pandas(query, df):
+    try:
+        prompt = f"将以下自然语言查询转化为Pandas代码：\n{query}\n\nPandas 代码:"
+        response = openai.Completion.create(
+            model="text-davinci-003",
+            prompt=prompt,
+            max_tokens=150
+        )
+        pandas_code = response.choices[0].text.strip()
+        st.write("生成的 Pandas 代码:", pandas_code)
+        result = eval(pandas_code)
+        return result
+    except Exception as e:
+        st.error(f"自然语言查询解析失败: {e}")
+        return None
 
-# 基于用户输入生成图表
-def generate_chart(df, analysis_request):
-    # 使用spaCy进行文本分析，提取列名等信息
-    doc = nlp(analysis_request)
+# Streamlit 页面配置
+st.title("ChatExcel - 智能 Excel 数据分析")
 
-    # 提取文本中的名词（可能是列名）
-    columns = [token.text for token in doc if token.pos_ == "NOUN"]
+# 上传文件
+uploaded_file = st.file_uploader("上传你的 Excel 文件", type=["xlsx", "xls"])
 
-    # 如果用户输入中包含至少两列数据，生成柱状图
-    if len(columns) >= 2:
-        col1, col2 = columns[:2]
+if uploaded_file:
+    df = load_excel(uploaded_file)
+    if df is not None:
+        st.write("### 数据预览", df.head())
 
-        # 如果这些列存在于数据框中
-        if col1 in df.columns and col2 in df.columns:
-            chart_type = guess_chart_type(analysis_request)
+        # 选择列进行图表对比
+        x_col = st.selectbox("选择 X 轴数据列", df.columns)
+        y_col1 = st.selectbox("选择第一个 Y 轴数据列", df.columns)
+        y_col2 = st.selectbox("选择第二个 Y 轴数据列", df.columns)
+        chart_type = st.selectbox("选择图表类型", ["bar", "line", "scatter"])
 
-            if chart_type == "bar":
-                return generate_bar_chart(df, col1, col2)
-            elif chart_type == "line":
-                return generate_line_chart(df, col1, col2)
-            elif chart_type == "scatter":
-                return generate_scatter_chart(df, col1, col2)
-            elif chart_type == "heatmap":
-                return generate_heatmap(df)
-            elif chart_type == "pie":
-                return generate_pie_chart(df, col1)
-    return None
+        if st.button("生成图表"):
+            generate_chart(df, x_col, y_col1, y_col2, chart_type)
 
+        # 让用户输入 Pandas 查询语句
+        query = st.text_area("输入查询语句 (如 df[df['列名'] > 10])", "df")
+        if st.button("执行查询"):
+            result = query_data(df, query)
+            if result is not None:
+                st.write("### 查询结果", result)
 
-# 生成柱状图
-def generate_bar_chart(df, col1, col2):
-    fig, ax = plt.subplots(figsize=(10, 6))
-    df[[col1, col2]].plot(kind='bar', ax=ax)
-    ax.set_title(f"{col1} 与 {col2} 对比柱状图")
-    ax.set_xlabel(col1)
-    ax.set_ylabel(col2)
-    return fig
-
-
-# 生成折线图
-def generate_line_chart(df, col1, col2):
-    fig, ax = plt.subplots(figsize=(10, 6))
-    df.plot(kind='line', x=col1, y=col2, ax=ax)
-    ax.set_title(f"{col1} 与 {col2} 的折线图")
-    return fig
-
-
-# 生成散点图
-def generate_scatter_chart(df, col1, col2):
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.scatter(df[col1], df[col2])
-    ax.set_title(f"{col1} 与 {col2} 的散点图")
-    ax.set_xlabel(col1)
-    ax.set_ylabel(col2)
-    return fig
-
-
-# 生成热力图
-def generate_heatmap(df):
-    fig, ax = plt.subplots(figsize=(10, 6))
-    corr = df.corr()
-    sns.heatmap(corr, annot=True, cmap='coolwarm', fmt='.2f', ax=ax)
-    ax.set_title("相关性热力图")
-    return fig
-
-
-# 生成饼图
-def generate_pie_chart(df, col):
-    fig, ax = plt.subplots(figsize=(8, 8))
-    df[col].value_counts().plot(kind='pie', autopct='%1.1f%%', ax=ax)
-    ax.set_title(f"{col} 的饼图")
-    ax.set_ylabel('')
-    return fig
-
-
-# 主函数
-def main():
-    st.title("基于自然语言的 Excel 数据分析")
-
-    # 上传文件
-    uploaded_file = st.file_uploader("上传您的 Excel 文件", type=["xlsx"])
-
-    if uploaded_file is not None:
-        # 读取文件
-        df = pd.read_excel(uploaded_file)
-        st.write("数据预览：")
-        st.write(df.head())
-
-        # 输入分析需求
-        analysis_request = st.text_input("请输入分析需求（例如：'基于这个Excel文档帮我生成一个计划与时间完成的对比柱状图'）")
-
-        # 持续监控分析请求
-        if analysis_request:
-            with st.spinner('正在处理中...'):
-                fig = generate_chart(df, analysis_request)
-                if fig:
-                    st.pyplot(fig)
-                else:
-                    st.error("无法解析该请求，请检查输入的内容。")
-        else:
-            st.warning("请输入分析需求。")
-
-
-if __name__ == "__main__":
-    main()
+        # 自然语言查询
+        user_query = st.text_input("输入自然语言查询 (如：'显示所有大于100的销售数据')")
+        if st.button("执行自然语言查询"):
+            if user_query:
+                result = chat_query_to_pandas(user_query, df)
+                if result is not None:
+                    st.write("### 查询结果", result)
